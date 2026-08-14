@@ -478,4 +478,4 @@ user edits source.
  
 ---
  
-*End of unified documentation.*\
+
