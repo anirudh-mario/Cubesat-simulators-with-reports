@@ -1,15 +1,15 @@
-CubeSat Simulators with Reports
+#CubeSat Simulators with Reports#
 
 A multi-module CubeSat simulation project developed using Python and MATLAB. The project provides software-based simulations for spacecraft flight behavior, space-environment material degradation, and attitude determination and control.
 
 The simulators are designed to provide visualized simulation results and generated reports that can be used to study different aspects of CubeSat operation and design.
 
-1. Program Requirements
+#1. Program Requirements#
 
 The project uses Python for the Flight Simulator and Material Simulator, while the ADCS Simulator is developed using MATLAB.
 
 Python Requirements
-Python 3.x
+Python 3
 NumPy
 Matplotlib
 Tkinter
@@ -27,7 +27,7 @@ Base MATLAB functionality
 
 The current ADCS simulator is designed to run using base MATLAB without additional toolboxes.
 
-2. About the Project
+#2. About the Project#
 
 CubeSat Simulators with Reports is a collection of simulation programs designed to study different aspects of CubeSat systems through software.
 
