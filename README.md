@@ -1,10 +1,10 @@
-#CubeSat Simulators with Reports#
+# CubeSat Simulators with Reports
 
 A multi-module CubeSat simulation project developed using Python and MATLAB. The project provides software-based simulations for spacecraft flight behavior, space-environment material degradation, and attitude determination and control.
 
 The simulators are designed to provide visualized simulation results and generated reports that can be used to study different aspects of CubeSat operation and design.
 
-#1. Program Requirements#
+# 1. Program Requirements
 
 The project uses Python for the Flight Simulator and Material Simulator, while the ADCS Simulator is developed using MATLAB.
 
@@ -27,7 +27,7 @@ Base MATLAB functionality
 
 The current ADCS simulator is designed to run using base MATLAB without additional toolboxes.
 
-#2. About the Project#
+# 2. About the Project
 
 CubeSat Simulators with Reports is a collection of simulation programs designed to study different aspects of CubeSat systems through software.
 
@@ -113,7 +113,7 @@ while the simulation is running.
 
 A disturbance can also be introduced to simulate a tumble, allowing the controller's recovery behavior to be observed.
 
-3. How the Simulators Are Developed
+# 3. How the Simulators Are Developed
 
 The project combines mathematical modeling, numerical simulation, control algorithms, visualization, and report generation.
 
@@ -225,7 +225,7 @@ The simulator continuously updates the CubeSat model and telemetry.
 
 The 3D visualization shows both the current spacecraft orientation and the commanded target orientation.
 
-4. Simulation Plan & Workflow
+# 4. Simulation Plan & Workflow
 
 The project follows a modular approach where each simulator focuses on a particular aspect of CubeSat development.
 
@@ -416,7 +416,7 @@ ADCS Simulation Workflow
            └─────┬──────┘
                  ▼
           Continue Loop
-5. Expected Outcomes
+# 5. Expected Outcomes
 
 The main outcome of the project is a software environment in which different CubeSat-related systems can be simulated and analyzed.
 
@@ -442,7 +442,7 @@ These results can be used for understanding spacecraft behavior, comparing desig
 
 The simulations are intended as engineering and educational models. Their results depend on the assumptions, parameters, and simplified models implemented in the respective simulators and should not be treated as exact predictions of an actual spacecraft mission.
 
-6. Conclusion
+# 6. Conclusion
 
 CubeSat Simulators with Reports provides a modular software-based approach to studying important aspects of CubeSat design and operation.
 
