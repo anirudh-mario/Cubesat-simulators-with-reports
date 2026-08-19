@@ -72,20 +72,11 @@ The **Interactive CubeSat ADCS Simulator** (`ADCS_simulator.m`) is the centerpie
 ### 2.2 Mathematical Foundations
 
 #### Quaternion Kinematics
-Spacecraft attitude is represented using unit quaternions $q = [q_0, \mathbf{q}_v]^T = [w, x, y, z]^T$, completely eliminating gimbal lock singularities:
-$$\dot{q} = \frac{1}{2} q \otimes \begin{bmatrix} 0 \\ \boldsymbol{\omega} \end{bmatrix} = \frac{1}{2} \begin{bmatrix} -x\omega_x - y\omega_y - z\omega_z \\ w\omega_x + y\omega_z - z\omega_y \\ w\omega_y - x\omega_z + z\omega_x \\ w\omega_z + x\omega_y - y\omega_x \end{bmatrix}$$
-
+Spacecraft attitude is represented using unit quaternion.
 #### Euler Rigid-Body Dynamics
-Rotational motion obeys Euler's equations with reaction wheel control torque $\boldsymbol{\tau}_{\text{cmd}}$:
-$$\mathbf{I} \dot{\boldsymbol{\omega}} + \boldsymbol{\omega} \times (\mathbf{I} \boldsymbol{\omega}) = \boldsymbol{\tau}_{\text{cmd}} \implies \dot{\boldsymbol{\omega}} = \mathbf{I}^{-1} \left( \boldsymbol{\tau}_{\text{cmd}} - \boldsymbol{\omega} \times (\mathbf{I} \boldsymbol{\omega}) \right)$$
-where $\mathbf{I} = \text{diag}(I_{xx}, I_{yy}, I_{zz})$ is the 3U CubeSat inertia tensor calculated from mass ($4.0\text{ kg}$) and dimensions ($0.1\text{m} \times 0.1\text{m} \times 0.3\text{m}$).
-
+Rotational motion obeys Euler's equations with reaction wheel control torque .
 #### Saturated PD Quaternion Tracking Control Law
-Given target quaternion $q_{\text{target}}$ and current quaternion $q$, the error quaternion is computed via quaternion conjugation:
-$$q_{\text{err}} = q_{\text{target}}^* \otimes q$$
-If the scalar component $q_{\text{err}, 0} < 0$, the quaternion is negated to enforce the shortest rotation path. The control torque command is then:
-$$\boldsymbol{\tau}_{\text{cmd}} = \text{clip}\left( -K_p \mathbf{q}_{\text{err}, v} - K_d \boldsymbol{\omega}, \; -\tau_{\max}, \; +\tau_{\max} \right)$$
-*(Default tuning: $K_p = 0.015$, $K_d = 0.050$, $\tau_{\max} = 0.004\text{ N}\cdot\text{m}$, $\Delta t = 0.03\text{ s}$)*.
+Given target quaternion  and current quaternion, the error quaternion is computed via quaternion conjugation.
 
 ### 2.3 User Interface & Interaction Guide
 
