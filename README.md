@@ -1,32 +1,93 @@
 # CubeSat Engineering Simulation Toolkit
 ### Interactive ADCS Simulation (MATLAB Showcase) & Space Mission Degradation Suite (Python)
 
-Welcome to the **CubeSat Engineering Simulation Toolkit**! This project was built as an engineering project to explore and replicate satellite dynamics in software. It brings together two core areas of space engineering that are usually separated: **how a satellite points and controls its orientation (ADCS)**, and **how harsh space environments degrade its materials and affect its flight**.
+[![MATLAB](https://img.shields.io/badge/MATLAB-R2018b%2B-blue.svg)](https://www.mathworks.com/products/matlab.html)
+[![Python](https://img.shields.io/badge/Python-3.8%2B-green.svg)](https://www.python.org/)
+[![License](https://img.shields.io/badge/License-MIT-orange.svg)]()
 
-The toolkit is split into two complementary tools:
-1. **Interactive 3D ADCS Simulator (MATLAB)** — *The Flagship Showcase*: A real-time, interactive 3D simulation where you can grab sliders mid-flight, command new orientations, inject tumble disturbances, and watch reaction wheels stabilize the spacecraft in real time.
-2. **Flight & Space Material Degradation Simulator (Python)** — *The Mission Toolkit Module*: A high-fidelity mission simulation that runs orbital mechanics (RK4 + $J_2$) alongside material degradation models (UV, atomic oxygen, radiation, thermal cycling) to see how material aging physically alters flight disturbance torques and solar power generation.
-
----
-
-## Quick Navigation
-- [1. Flagship Showcase: Interactive MATLAB ADCS Simulator](#1-flagship-showcase-interactive-matlab-adcs-simulator)
-  - [1.1 Why It's Built This Way](#11-why-its-built-this-way)
-  - [1.2 How the Physics & Controls Work](#12-how-the-physics--controls-work)
-  - [1.3 How to Run & Play with It](#13-how-to-run--play-with-it)
-- [2. Mission Module: Python Flight & Material Degradation Simulator](#2-mission-module-python-flight--material-degradation-simulator)
-  - [2.1 What Makes This Simulator Unique](#21-what-makes-this-simulator-unique)
-  - [2.2 The Physics Coupling (Materials $\leftrightarrow$ Flight)](#22-the-physics-coupling-materials-leftrightarrow-flight)
-  - [2.3 How to Run the Python Simulator](#23-how-to-run-the-python-simulator)
-- [3. Space Materials Quick Reference](#3-space-materials-quick-reference)
-- [4. Side-by-Side Comparison](#4-side-by-side-comparison)
-- [5. Detailed Engineering Reports](#5-detailed-engineering-reports)
+A comprehensive small-satellite (CubeSat) engineering simulation toolkit developed as an engineering capstone project. The toolkit features a **flagship interactive 3D Attitude Determination and Control System (ADCS) simulator** in MATLAB, complemented by an **integrated orbital flight and space material degradation simulator** in Python.
 
 ---
 
-## 1. Flagship Showcase: Interactive MATLAB ADCS Simulator
+## Table of Contents
+1. [Toolkit Overview & Architecture](#1-toolkit-overview--architecture)
+2. [Primary Showcase: Interactive ADCS Simulator (MATLAB)](#2-primary-showcase-interactive-adcs-simulator-matlab)
+   - [2.1 Core Features & Highlights](#21-core-features--highlights)
+   - [2.2 Mathematical Foundations](#22-mathematical-foundations)
+   - [2.3 User Interface & Interaction Guide](#23-user-interface--interaction-guide)
+   - [2.4 Running the MATLAB Simulation](#24-running-the-matlab-simulation)
+3. [Secondary Module: Integrated Flight & Material Degradation Simulator (Python)](#3-secondary-module-integrated-flight--material-degradation-simulator-python)
+   - [3.1 Purpose & Role in the Toolkit](#31-purpose--role-in-the-toolkit)
+   - [3.2 Physics Coupling: Material Degradation & Flight Dynamics](#32-physics-coupling-material-degradation--flight-dynamics)
+   - [3.3 Live Dashboard & Telemetry Visualizer](#33-live-dashboard--telemetry-visualizer)
+   - [3.4 Running the Python Simulation](#34-running-the-python-simulation)
+4. [Toolkit Cross-Comparison Matrix](#4-toolkit-cross-comparison-matrix)
+5. [Candidate Space Materials Reference](#5-candidate-space-materials-reference)
+6. [Documentation & Engineering Reports](#6-documentation--engineering-reports)
+7. [Physical & Control Constants Reference](#7-physical--control-constants-reference)
 
-The **MATLAB ADCS Simulator** (`ADCS_simulator.m`) is the main highlight of this toolkit. Instead of running a static script and waiting for plots at the end, this simulator runs a live physics loop in real time. You can interact with the CubeSat while it flies, just like an operator at a ground station commanding a spacecraft.
+---
+
+## 1. Toolkit Overview & Architecture
+
+Modern satellite development requires cross-disciplinary analysis spanning **attitude control dynamics**, **orbital mechanics**, and **environmental material degradation**. This toolkit brings these facets together into a cohesive simulation suite:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    CUBESAT ENGINEERING SIMULATION TOOLKIT                   │
+└──────────────────────────────────────┬──────────────────────────────────────┘
+                                       │
+         ┌─────────────────────────────┴─────────────────────────────┐
+         ▼                                                           ▼
+┌───────────────────────────────────┐       ┌───────────────────────────────────┐
+│       PRIMARY FLAGSHIP MODULE     │       │     SECONDARY INTEGRATED MODULE   │
+│       Interactive ADCS Sim        │       │    Flight & Material Sim          │
+│       (ADCS_simulator.m)          │       │(flight_and_material_simulator.py) │
+├───────────────────────────────────┤       ├───────────────────────────────────┤
+│ • Platform: Base MATLAB           │       │ • Platform: Python 3 + Tkinter    │
+│ • Focus: Real-time 3D control     │       │ • Focus: Mission orbital flight   │
+│ • Live slider orientation steering│       │ • RK4 + J2 orbit propagation      │
+│ • Saturated PD reaction wheel law │       │ • Multi-hazard space degradation  │
+│ • Live tumble disturbance kick    │       │ • SRP & power degradation coupling│
+│ • Rolling telemetry buffers       │       │ • Full CSV + TXT data logging     │
+└───────────────────────────────────┘       └───────────────────────────────────┘
+```
+
+---
+
+## 2. Primary Showcase: Interactive ADCS Simulator (MATLAB)
+
+The **Interactive CubeSat ADCS Simulator** (`ADCS_simulator.m`) is the centerpiece of this engineering project. It delivers an intuitive, visually stunning, real-time closed-loop attitude determination and control environment with zero external toolbox dependencies.
+
+### 2.1 Core Features & Highlights
+- **Live Target Attitude Dragging:** Adjust Yaw, Pitch, and Roll sliders at any time while the simulation is actively computing dynamics; the target orientation updates immediately, and the CubeSat executes a real-time reorientation maneuver.
+- **Dual 3D Triad Rendering:** Displays the active CubeSat 3D body triad (solid red/green/blue lines) continuously chasing the commanded target reference triad (dashed lines).
+- **Physical Reaction Wheel Model:** Implements realistic torque saturation limits ($\tau_{\max} = 0.004\text{ N}\cdot\text{m}$) preventing unrealistic instant pointing.
+- **Perturbation & Disturbance Injection:**
+  - **"Disturb (Tumble)" Button:** Injects an abrupt random angular velocity disturbance kick ($\pm 35^\circ/\text{s}$), challenging the PD controller to detumble and re-acquire pointing.
+  - **"Randomize Target" Button:** Commands an instantaneous random target attitude.
+  - **"Reset" Button:** Re-centers state, zeroes angular rates, and resets scrolling buffers.
+- **Rolling Real-Time Telemetry:** Scrolling history plots for 3-axis angular rates ($\omega_x, \omega_y, \omega_z$), attitude error norm $\|q_{\text{err}}\|$, and lock-in indicator status.
+
+### 2.2 Mathematical Foundations
+
+#### Quaternion Kinematics
+Spacecraft attitude is represented using unit quaternions $q = [q_0, \mathbf{q}_v]^T = [w, x, y, z]^T$, completely eliminating gimbal lock singularities:
+$$\dot{q} = \frac{1}{2} q \otimes \begin{bmatrix} 0 \\ \boldsymbol{\omega} \end{bmatrix} = \frac{1}{2} \begin{bmatrix} -x\omega_x - y\omega_y - z\omega_z \\ w\omega_x + y\omega_z - z\omega_y \\ w\omega_y - x\omega_z + z\omega_x \\ w\omega_z + x\omega_y - y\omega_x \end{bmatrix}$$
+
+#### Euler Rigid-Body Dynamics
+Rotational motion obeys Euler's equations with reaction wheel control torque $\boldsymbol{\tau}_{\text{cmd}}$:
+$$\mathbf{I} \dot{\boldsymbol{\omega}} + \boldsymbol{\omega} \times (\mathbf{I} \boldsymbol{\omega}) = \boldsymbol{\tau}_{\text{cmd}} \implies \dot{\boldsymbol{\omega}} = \mathbf{I}^{-1} \left( \boldsymbol{\tau}_{\text{cmd}} - \boldsymbol{\omega} \times (\mathbf{I} \boldsymbol{\omega}) \right)$$
+where $\mathbf{I} = \text{diag}(I_{xx}, I_{yy}, I_{zz})$ is the 3U CubeSat inertia tensor calculated from mass ($4.0\text{ kg}$) and dimensions ($0.1\text{m} \times 0.1\text{m} \times 0.3\text{m}$).
+
+#### Saturated PD Quaternion Tracking Control Law
+Given target quaternion $q_{\text{target}}$ and current quaternion $q$, the error quaternion is computed via quaternion conjugation:
+$$q_{\text{err}} = q_{\text{target}}^* \otimes q$$
+If the scalar component $q_{\text{err}, 0} < 0$, the quaternion is negated to enforce the shortest rotation path. The control torque command is then:
+$$\boldsymbol{\tau}_{\text{cmd}} = \text{clip}\left( -K_p \mathbf{q}_{\text{err}, v} - K_d \boldsymbol{\omega}, \; -\tau_{\max}, \; +\tau_{\max} \right)$$
+*(Default tuning: $K_p = 0.015$, $K_d = 0.050$, $\tau_{\max} = 0.004\text{ N}\cdot\text{m}$, $\Delta t = 0.03\text{ s}$)*.
+
+### 2.3 User Interface & Interaction Guide
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
