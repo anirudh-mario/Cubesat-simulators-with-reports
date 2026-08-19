@@ -3,9 +3,8 @@
 
 [![MATLAB](https://img.shields.io/badge/MATLAB-R2018b%2B-blue.svg)](https://www.mathworks.com/products/matlab.html)
 [![Python](https://img.shields.io/badge/Python-3.8%2B-green.svg)](https://www.python.org/)
-[![License](https://img.shields.io/badge/License-MIT-orange.svg)]()
 
-A comprehensive small-satellite (CubeSat) engineering simulation toolkit developed as an engineering capstone project. The toolkit features a **flagship interactive 3D Attitude Determination and Control System (ADCS) simulator** in MATLAB, complemented by an **integrated orbital flight and space material degradation simulator** in Python.
+A comprehensive small-satellite (CubeSat) engineering simulation toolkit developed as an engineering project. The toolkit features a **interactive 3D Attitude Determination and Control System (ADCS) simulator** in MATLAB, complemented by an **integrated orbital flight and space material degradation simulator** in Python.
 
 ---
 
