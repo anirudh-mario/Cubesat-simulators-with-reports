@@ -1,481 +1,219 @@
-# CubeSat Engineering Simulation Toolkit — Unified Reference Documentation
- 
-**Scope note:** This document consolidates three independent, standalone simulation
-programs into a single reference: one MATLAB application and two Python/Tkinter
-applications, all in the small-satellite (CubeSat) engineering domain. They do **not**
-share code, a runtime, or a data store today — each is a self-contained script. This
-document treats them as three modules of one *conceptual* toolkit, documents each
-faithfully, and is explicit anywhere it moves from "what exists" to "what a real
-integration would require."
- 
-| Source file | Tool name used below |
-|---|---|
-| `Pasted_text_6_.txt` (MATLAB) | **ADCS-Interactive** |
-| `Pasted_text_4_.txt` (Python) | **Flight-Sim** |
-| `Pasted_text_5_.txt` (Python) | **Material-Sim** |
- 
----
- 
-## 1. Project Overview
- 
-### 1.1 Vision
-A small suite of engineering simulators covering three distinct concerns that a
-CubeSat mission actually has to reckon with: how the spacecraft *points* (attitude
-determination and control), how the spacecraft *operates* over an orbit (sensors,
-disturbances, faults, propulsion, power), and how the spacecraft's *materials
-survive* years of thermal cycling, radiation, atomic oxygen, and micrometeorite
-bombardment. Together they form a rough end-to-end picture of CubeSat systems
-engineering, even though nothing currently wires them together programmatically.
- 
-### 1.2 Goals
-- Give an intuitive, visual feel for closed-loop attitude control (ADCS-Interactive).
-- Provide a higher-fidelity, mission-length simulation with realistic sensors,
- disturbance torques, orbital mechanics, and a fault-aware flight-software state
- machine (Flight-Sim).
-- Quantify how long different spacecraft materials survive the space environment,
- and which degradation mechanism dominates for each (Material-Sim).
-### 1.3 Scope & Non-Goals
-In scope: attitude dynamics/control, Keplerian+J2 orbit propagation, sensor noise
-modeling, disturbance torque modeling, fault detection, material degradation
-modeling, and desktop visualization/reporting for all of the above.
- 
-Explicitly out of scope in the current code: any shared persistence layer, any
-network/API surface, any automated testing, and any actual data flow between the
-three tools (e.g., material degradation currently has zero effect on the flight
-simulator's power or optical properties — see §13).
- 
----
- 
-## 2. System Overview
- 
-| Tool | Stack | Core Question It Answers | Interaction Model | Typical Output |
-|---|---|---|---|---|
-| **ADCS-Interactive** | MATLAB, base only (no toolboxes) | "If I command this attitude right now, how does the spacecraft get there?" | Live slider drag while sim runs | 3D live view + scrolling telemetry plots |
-| **Flight-Sim** | Python 3, NumPy, Tkinter, Matplotlib | "Over a 30-minute (or longer) pass, does the spacecraft hold attitude, stay powered, and avoid safe mode?" | Configure once via a launch dialog, then watch a live dashboard | CSV telemetry (every timestep) + TXT mission report |
-| **Material-Sim** | Python 3, NumPy, Tkinter, Matplotlib | "After N days in LEO/GEO/deep space, how much structural integrity does each candidate material have left, and why?" | Configure once via a launch form, then run to completion | PNG multi-panel plot + TXT summary report |
- 
----
- 
-## 3. Architecture
- 
-### 3.1 Common Architectural Pattern
-All three follow the same shape, at different levels of sophistication:
- 
-```text
-Physical/Environmental Model → State Update (integration step) → Recorded History → Visualization
-```
- 
-The difference is in *how* the loop is driven and *what* runs concurrently with the GUI.
- 
-### 3.2 ADCS-Interactive (MATLAB)
-```text
-┌─────────────────────────────┐
-│ while ishandle(fig) │ <- single-threaded, blocking loop
-│ read sliders (live) │
-│ q_target = f(sliders) │
-│ PD control -> tau_cmd │
-│ rigid-body dynamics step │
-│ quaternion kinematics step │
-│ update 3D patch + plots │
-│ drawnow limitrate │
-│ end │
-└─────────────────────────────┘
-```
-Everything — physics, control, and rendering — happens in one thread, one iteration
-per loop pass. Slider callbacks only set `appdata` flags/values; the loop reads them
-each pass, which is what makes the "drag anytime" interactivity work without a
-separate event system.
- 
-### 3.3 Flight-Sim (Python)
-```text
-Main Thread (Tkinter) Background Thread (SimEngine)
-────────────────────── ────────────────────────────
-LaunchDialog (config) OrbitPropagator.step() (RK4 + J2)
- │ Sensor.measure() x4 (gyro/star/sun/mag)
- ▼ Disturbance torques (GG, SRP, drag, mag)
-Dashboard._update() <── polls ── ADCSController.compute_torque() (PD, saturated)
- every 300 ms, reads Rigid-body dynamics + quaternion integration
- engine.state under a lock FlightController.check_faults() -> mode
- │ SimState.record() (append to history)
- ▼
-Matplotlib canvas + status tiles
-```
-This is the most defensively engineered of the three: `SimEngine` extends
-`threading.Thread`, all state mutation happens inside `with self._lock:`, and the
-whole `run()` body is wrapped in `try/except` so a crash sets `self.error` instead of
-killing the process — directly addressing the "star tracker returns None" class of
-bug the file's header calls out.
- 
-### 3.4 Material-Sim (Python)
-```text
-SimulatorGUI (Tkinter form)
- │ user clicks "Run Simulation"
- ▼
-SpaceSimulation.run() <- runs on the MAIN/GUI thread, synchronously
- │ for each material:
- │ for each timestep:
- │ compute equilibrium temperature
- │ accumulate UV / radiation / AO / impact / outgassing damage
- │ record history
- ▼
-print_report() -> TXT file
-plot_results() -> PNG file + plt.show()
-```
-Unlike Flight-Sim, there is no background thread here — `_on_run` calls `sim.run()`
-directly on the Tkinter main loop. For a multi-year mission at a fine timestep this
-blocks the UI for the full duration (see §13).
- 
----
- 
-## 4. Workflow
- 
-**ADCS-Interactive:** Launch the script → figure opens with cube, telemetry axes, and
-sliders already active → drag Yaw/Pitch/Roll at any time → watch the dashed target
-axes move and the solid body axes chase them → optionally click *Randomize Target*,
-*Disturb (Tumble)*, or *Reset* → close the figure to stop.
- 
-**Flight-Sim:** Launch → splash screen → *Configure Mission* opens a dialog
-(spacecraft preset, orbit altitude/inclination/RAAN, target Euler angles, sim
-duration, timestep) → *Launch Simulation* validates inputs and starts `SimEngine` on
-a background thread → Dashboard shows live tiles (roll/pitch/yaw, attitude error,
-altitude, velocity, fuel, reaction-wheel saturation, lat/lon, ΔV) plus six scrolling
-plots → *Pause*/*Stop* controls → on completion (or stop), a TXT report and full CSV
-telemetry history are written next to the script.
- 
-**Material-Sim:** Launch → form asks for environment (LEO/GEO/Deep Space), mission
-duration (days), and timestep (hours) → *Run Simulation* validates ranges → runs to
-completion (UI frozen during this) → status updates to "Done" → a console/TXT report
-prints per-material integrity, and a 8-panel PNG (six line-chart panels, one
-horizontal bar chart of final integrity, one radar chart of damage breakdown) is
-saved and displayed.
- 
----
- 
-## 5. Data Flow
- 
-**ADCS-Interactive**
-```text
-Slider values (deg)
- │
- ▼
-q_target (quaternion)
- │
- ▼
-PD controller ──► tau_cmd (saturated)
- │
- ▼
-Rigid-body dynamics ──► w (angular rate), q (attitude)
- │
- ▼
-3D patch transform + scrolling telemetry buffers (in-memory only, not persisted)
-```
- 
-**Flight-Sim**
-```text
-Config (preset + orbit + target + duration + dt)
- │
- ▼
-OrbitPropagator ──► r_vec, v_vec ──► altitude, lat/lon, disturbance torques
- │
- ▼
-Sensors (noisy) ──► q_meas, omega_meas
- │
- ▼
-ADCSController ──► tau_cmd ──┐
- │ ├──► Rigid-body dynamics ──► q, omega, euler
-Disturbance torques ───────────┘
- │
- ▼
-FlightController.check_faults() ──► mode, faults[]
- │
- ▼
-SimState.record() ──► history dict (in-memory)
- │
- ├──► Dashboard (live, every 300 ms)
- └──► on completion: telemetry_data.csv + flight_adcs_report.txt (on disk)
-```
- 
-**Material-Sim**
-```text
-SpaceEnvironment preset (LEO/GEO/Deep Space)
- │
- ▼
-For each Material, for each timestep:
- equilibrium temperature ──► mat.temperature
- UV / radiation / AO / impact / outgassing steps ──► damage accumulators
- │
- ▼
-Material.total_degradation (weighted index) ──► structural_integrity
- │
- ▼
-history[material][metric] (in-memory)
- │
- ├──► print_report() ──► simulation_report.txt
- └──► plot_results() ──► space_material_sim_output.png
-```
- 
----
- 
-## 6. Component Relationships
- 
-**ADCS-Interactive:** UI sliders → target quaternion → controller → dynamics →
-renderer. A single flat script; no classes — just functions (`quatMult`,
-`quatConj`, `quat2rotm_wxyz`, `eul2quat_wxyz`) called directly from the main loop.
- 
-**Flight-Sim:** Object graph is explicit and layered:
-`SpacecraftConfig` (static properties) is read by `ADCSController`,
-`FlightController`, and all four sensor classes. `OrbitPropagator` is independent of
-attitude and only coupled to it through the disturbance-torque functions, which take
-both `q` and `r_vec`. `SimEngine` is the orchestrator that owns one instance of
-everything and drives the timestep loop; `Dashboard` never touches physics directly —
-it only reads `engine.state` under a lock.
- 
-**Material-Sim:** `SpaceSimulation` owns a list of `Material` instances and one
-`SpaceEnvironment`. Each degradation mechanism (`_uv_step`, `_radiation_step`,
-`_ao_step`, `_impact_step`, `_outgassing_step`) is a pure-ish method that reads
-`self.env` and a single `Material`, and mutates that material's damage counters
-directly — there's no controller/actuator layer at all, since there's nothing to
-control.
- 
----
- 
-## 7. Module Breakdown
- 
-Since all three are single-file scripts rather than multi-file packages, "modules"
-below refer to the labeled sections within each file.
- 
-| ADCS-Interactive (MATLAB) | Flight-Sim (Python) | Material-Sim (Python) |
-|---|---|---|
-| Physical/control parameters | Constants | Material definition (`Material`) |
-| State init | Quaternion utilities | Environment definition (`SpaceEnvironment` + 3 presets) |
-| Figure/UI (3D view, telemetry axes, sliders, buttons) | Spacecraft configuration + presets | Preset materials (`make_materials`) |
-| Main loop | Sensors (Gyroscope, StarTracker, SunSensor, Magnetometer) | Simulation engine (`SpaceSimulation`) |
-| Helper functions (quatMult, quatConj, quat2rotm_wxyz, eul2quat_wxyz) | Disturbance torques | Visualization (`plot_results`) |
-| | Attitude controller (`ADCSController`) | Summary report (`print_report`) |
-| | Orbit propagator (`OrbitPropagator`) | Tkinter GUI launcher (`SimulatorGUI`) |
-| | Flight controller (`FlightController`) | Entry point |
-| | Simulation engine (`SimState`, `SimEngine`) | |
-| | GUI (`LaunchDialog`, `Dashboard`, `App`) | |
-| | Entry point | |
- 
----
- 
-## 8. Data & Persistence Overview
- 
-None of the three tools use a database. All persistence is flat-file, written next
-to the script at runtime:
- 
-| Tool | Files written | Format |
-|---|---|---|
-| ADCS-Interactive | none | telemetry lives only in scrolling in-memory buffers |
-| Flight-Sim | `flight_adcs_report.txt`, `telemetry_data.csv` | plain text summary; full-history CSV (every field, every timestep) |
-| Material-Sim | `simulation_report.txt`, `space_material_sim_output.png` | plain text summary; rendered figure |
- 
-There is no shared schema between the two report/CSV outputs, and no mechanism for
-one tool to read another's output.
- 
----
- 
-## 9. Feature Breakdown
- 
-**ADCS-Interactive**
-- Live-updating target attitude via sliders (works mid-simulation, not just at start)
-- PD reaction-wheel control with torque saturation
-- "Randomize Target" and "Disturb (Tumble)" buttons for ad-hoc scenario testing
-- Reset to zero state
-- Dual axis-triad rendering (solid = current, dashed = target)
-- Rolling attitude-error and angular-rate telemetry
-**Flight-Sim**
-- Three spacecraft presets (CubeSat 6U, SmallSat 50 kg, MicroSat 150 kg)
-- Configurable orbit (altitude, inclination, RAAN) with RK4 + J2 propagation
-- Four independently-modeled noisy/faultable sensors
-- Four disturbance-torque sources (gravity-gradient, solar-radiation-pressure,
- aerodynamic drag, residual magnetic dipole)
-- PD attitude control with reaction-wheel momentum saturation tracking
-- Fault detection → automatic mode switching (NOMINAL / SAFE MODE / DETUMBLE / …)
-- Thruster ΔV execution with rocket-equation fuel consumption
-- Ground-track (lat/lon) computation
-- Pause/resume/stop controls, live 6-panel telemetry dashboard
-- Full-fidelity CSV export of every recorded timestep
-**Material-Sim**
-- Five preset materials spanning metals, composite, and polymer film/ceramic
-- Three preset environments (LEO, GEO, Deep Space) with physically distinct
- atomic-oxygen flux, radiation dose, and thermal extremes
-- Five independent degradation mechanisms per material per timestep
-- Weighted composite "structural integrity" index per material
-- 8-panel report figure: six time-series, one final-integrity bar chart, one
- radar chart of damage-mechanism breakdown per material
-- Plain-text mission report with per-material end-of-mission table
----
- 
-## 10. End-to-End System Flow
- 
-**ADCS-Interactive:** script run → figure + controls instantiated → loop starts
-immediately with a small preset initial tumble → user interacts via sliders/buttons
-at will → loop runs until the figure window is closed → console prints
-"Simulation window closed."
- 
-**Flight-Sim:** script run → `App.__init__` builds the Tk root and shows the splash
-screen → user clicks *Configure Mission* → `LaunchDialog` validates all fields
-(range-checked) → on success, `App._open_config` builds a `SimEngine` from the
-chosen config and swaps the splash for a `Dashboard` → `engine.start()` launches the
-background thread → engine and dashboard run concurrently until `duration_s` is
-reached, an error occurs, or the user clicks *Stop* → `Dashboard._update` detects
-`engine.running == False` and calls `_save_report()`, writing the TXT report and CSV.
- 
-**Material-Sim:** script run → `SimulatorGUI` shows the config form → user clicks
-*Run Simulation* → `_validate()` range-checks duration/timestep → on success, a
-fixed random seed (42) is set, five preset materials are instantiated, a
-`SpaceSimulation` is built and `run()` synchronously simulates every material for
-every timestep → `print_report()` writes/prints the summary → `plot_results()`
-renders and saves the 8-panel figure, then calls the blocking `plt.show()`.
- 
----
- 
-## 11. Cross-Tool Comparison
- 
-| Aspect | ADCS-Interactive | Flight-Sim | Material-Sim |
-|---|---|---|---|
-| Attitude representation | Quaternion (w,x,y,z) | Quaternion (w,x,y,z) | N/A |
-| Control law | PD, torque-saturated | PD, torque- and momentum-saturated | N/A |
-| Orbit model | None | Two-body + J2, RK4 | Implicit via environment preset only |
-| Sensor noise modeled | No | Yes (4 sensor types) | N/A |
-| Fault handling | None | Explicit mode state machine | None |
-| Threading | Single thread, blocking loop | Background thread + polling GUI | Single thread, blocking call |
-| Randomness | User-triggered only | Sensor noise (Gaussian) | Poisson-distributed micrometeorite impacts + Gaussian sensor-style noise |
-| Persisted output | None | CSV + TXT | PNG + TXT |
-| Reusable across tools? | No (functions duplicated in text_4 too) | No | No |
- 
-**Where a real dependency should exist but doesn't:** Material-Sim's
-`absorptivity`/`emissivity` degradation (from `uv_damage`, `radiation_damage`) is
-exactly the kind of input that should feed Flight-Sim's `solar_radiation_torque`
-and its `power` bookkeeping in `FlightController` — a solar panel that's lost
-absorptivity late in a mission should show up as both a different SRP torque and
-lower generated power. Today, Flight-Sim's `power` field is a static constant
-(`28.0`, only ever checked against a `LOW VOLTAGE` threshold) with no model behind
-it at all, so there's nothing on that side to connect to yet either.
- 
----
- 
-## 12. Design Decisions & Rationale
- 
-**Quaternions over Euler angles for internal state (all attitude tools).** Avoids
-gimbal lock and keeps the kinematics equations non-singular; Euler angles are
-computed only at the boundary (display, slider input) and converted immediately.
- 
-**PD control with hard torque/momentum saturation (ADCS-Interactive, Flight-Sim).**
-Simple, numerically cheap, and — crucially — physically honest: real reaction wheels
-have finite torque and finite momentum storage, and clipping both is what produces
-believable saturation/detumble behavior rather than an idealized controller that can
-apply unlimited torque.
- 
-**RK4 + J2 orbit propagation (Flight-Sim only).** J2 is the dominant perturbation
-for LEO orbits over mission-relevant timescales (tens of minutes to days); RK4 gives
-good accuracy per step without needing a variable-step integrator, at the cost of
-being slower than a closed-form Keplerian propagator if very long durations were
-ever run.
- 
-**Background thread for the physics engine, polling dashboard (Flight-Sim only).**
-Keeps the Tkinter event loop responsive regardless of simulation timestep size or
-duration — the explicit design tradeoff Material-Sim did *not* make (see §13).
- 
-**Weighted composite degradation index (Material-Sim).** Five physically distinct
-damage mechanisms don't have a natural common unit; a fixed weighted sum
-(30/25/20/15/10) is a defensible simplification that keeps the model interpretable
-and easy to re-weight, at the cost of not being derived from any cited failure-mode
-analysis.
- 
-**Preset-based configuration over free-form input (all three, to varying degrees).**
-Spacecraft/environment presets reduce user error and give physically consistent
-starting points, at the cost of limiting exploration to the preset space unless the
-user edits source.
- 
----
- 
-## 13. Known Issues & Weaknesses
- 
-1. **Material-Sim blocks the UI thread during the run.** `_on_run` calls
- `sim.run()` synchronously; a long mission (e.g., 3650 days at a fine timestep)
- will freeze the window for the full computation. Flight-Sim already shows the
- correct pattern (background thread) that this file should adopt.
-2. **Fixed Sun vector in Flight-Sim.** `sun_dir_eci` is hardcoded to `[1,0,0]` and
- never updated, so solar-radiation torque and any future eclipse modeling won't
- track the spacecraft's actual orbital position relative to the Sun over multi-hour
- runs.
-3. **Duplicated quaternion math.** The same quaternion multiply/conjugate/rotate
- logic is hand-written independently in both the MATLAB and Python files, with
- no shared library — a correctness fix in one won't propagate to the other.
-4. **Unvalidated empirical constants in Material-Sim.** Coefficients like the
- `1e-4` UV damage rate and `1e-28` atomic-oxygen erosion factor aren't tied to a
- cited source; they produce plausible-looking curves but shouldn't be treated as
- validated engineering data without a reference.
-5. **No automated tests anywhere.** All three files rely entirely on manual/visual
- inspection of the GUI output to catch regressions.
-6. **No shared configuration format.** Each tool has its own bespoke launch dialog
- with independently validated ranges; there's no JSON/YAML config file a user
- could save and re-load, or share between tools.
-7. **`plt.show()` inside a Tkinter app (Material-Sim).** Calling the blocking
- pyplot show alongside an active Tkinter mainloop can behave inconsistently
- across platforms/backends.
----
- 
-## 14. Best Practices Reflected
- 
-- Physical saturation limits (torque, momentum) enforced at the model level, not
- just documented.
-- Dataclasses used for state and configuration objects (`SpacecraftConfig`,
- `SimState`, `Material`, `SpaceEnvironment`), keeping related fields grouped and
- self-documenting via type hints.
-- Flight-Sim's lock-protected shared state between the simulation thread and the
- GUI thread is the correct pattern for this kind of live-dashboard architecture.
-- Explicit fault/mode state machines (Flight-Sim) rather than scattering
- conditional checks throughout the render code.
-- Full-history export (Flight-Sim's per-timestep CSV) rather than only
- end-of-run summaries, which is what actually enables downstream analysis.
----
- 
-## 15. Recommended Future Improvements
- 
-1. **Extract a shared attitude-math library.** Consolidate `quatMult`,
- `quatConj`, `quat2rotm`/`euler` conversions into one module (or, across MATLAB
- and Python, one well-documented spec both implementations follow) so a bug fix
- only has to happen once.
-2. **Fix Material-Sim's threading model.** Move `SpaceSimulation.run()` onto a
- background thread with a lock-protected state object, mirroring Flight-Sim's
- `SimEngine` pattern, and poll it from the GUI the same way `Dashboard._update`
- does.
-3. **Wire material degradation into Flight-Sim.** Expose
- `Material.total_degradation` (or specifically `absorptivity`/`emissivity` drift)
- as an input to `solar_radiation_torque` and to a real power model in
- `FlightController`, replacing the current static `power = 28.0`. This is the
- single highest-value integration between these three tools.
-4. **Compute the Sun vector properly.** Even a simple analytic Earth-Sun ephemeris
- would let Flight-Sim model eclipse seasons and let Material-Sim's sunlit/shadow
- toggle be driven by the same orbit rather than a separate sinusoidal proxy.
-5. **Add a shared config format.** A common JSON/YAML schema for spacecraft,
- orbit, and environment parameters would let a single mission definition drive
- all three tools and make presets easy to author outside the source code.
-6. **Add regression tests for the physics.** Even a handful of property-based
- checks (quaternion stays unit-norm, energy/momentum sanity checks on a
- torque-free case, degradation index monotonically non-decreasing) would catch
- silent numerical bugs that a GUI won't surface.
-7. **Cite or replace the empirical degradation constants** in Material-Sim with
- values traceable to published space-materials data (e.g., NASA/ESA material
- outgassing and AO-erosion databases).
----
- 
-## 16. Appendix — Physical & Control Constants Reference
- 
-| Constant | Value | Used in | Meaning |
-|---|---|---|---|
-| μ_Earth | 3.986004418×10¹⁴ m³/s² | Flight-Sim | Earth gravitational parameter |
-| R_Earth | 6.371×10⁶ m | Flight-Sim | Earth mean radius |
-| J2 | 1.08263×10⁻³ | Flight-Sim | Earth oblateness perturbation coefficient |
-| B0_Earth | 3.12×10⁻⁴ T | Flight-Sim | Earth reference magnetic field strength |
-| P_Sun | 4.56×10⁻⁶ N/m² | Flight-Sim | Solar radiation pressure at 1 AU |
-| Stefan-Boltzmann σ | 5.670374419×10⁻⁸ W/(m²·K⁴) | Material-Sim | Radiative heat balance |
-| Solar flux (1 AU) | 1361 W/m² | Material-Sim (LEO/GEO presets) | Incident solar power |
- 
----
- 
+# CubeSat Engineering Simulation Toolkit
+### Interactive ADCS Simulation (MATLAB Showcase) & Space Mission Degradation Suite (Python)
 
+[![MATLAB](https://img.shields.io/badge/MATLAB-R2018b%2B-blue.svg)](https://www.mathworks.com/products/matlab.html)
+[![Python](https://img.shields.io/badge/Python-3.8%2B-green.svg)](https://www.python.org/)
+[![License](https://img.shields.io/badge/License-MIT-orange.svg)]()
+
+A comprehensive small-satellite (CubeSat) engineering simulation toolkit developed as an engineering capstone project. The toolkit features a **flagship interactive 3D Attitude Determination and Control System (ADCS) simulator** in MATLAB, complemented by an **integrated orbital flight and space material degradation simulator** in Python.
+
+---
+
+## Table of Contents
+1. [Toolkit Overview & Architecture](#1-toolkit-overview--architecture)
+2. [Primary Showcase: Interactive ADCS Simulator (MATLAB)](#2-primary-showcase-interactive-adcs-simulator-matlab)
+   - [2.1 Core Features & Highlights](#21-core-features--highlights)
+   - [2.2 Mathematical Foundations](#22-mathematical-foundations)
+   - [2.3 User Interface & Interaction Guide](#23-user-interface--interaction-guide)
+   - [2.4 Running the MATLAB Simulation](#24-running-the-matlab-simulation)
+3. [Secondary Module: Integrated Flight & Material Degradation Simulator (Python)](#3-secondary-module-integrated-flight--material-degradation-simulator-python)
+   - [3.1 Purpose & Role in the Toolkit](#31-purpose--role-in-the-toolkit)
+   - [3.2 Physics Coupling: Material Degradation & Flight Dynamics](#32-physics-coupling-material-degradation--flight-dynamics)
+   - [3.3 Live Dashboard & Telemetry Visualizer](#33-live-dashboard--telemetry-visualizer)
+   - [3.4 Running the Python Simulation](#34-running-the-python-simulation)
+4. [Toolkit Cross-Comparison Matrix](#4-toolkit-cross-comparison-matrix)
+5. [Candidate Space Materials Reference](#5-candidate-space-materials-reference)
+6. [Documentation & Engineering Reports](#6-documentation--engineering-reports)
+7. [Physical & Control Constants Reference](#7-physical--control-constants-reference)
+
+---
+
+## 1. Toolkit Overview & Architecture
+
+Modern satellite development requires cross-disciplinary analysis spanning **attitude control dynamics**, **orbital mechanics**, and **environmental material degradation**. This toolkit brings these facets together into a cohesive simulation suite:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    CUBESAT ENGINEERING SIMULATION TOOLKIT                   │
+└──────────────────────────────────────┬──────────────────────────────────────┘
+                                       │
+         ┌─────────────────────────────┴─────────────────────────────┐
+         ▼                                                           ▼
+┌───────────────────────────────────┐       ┌───────────────────────────────────┐
+│       PRIMARY FLAGSHIP MODULE     │       │     SECONDARY INTEGRATED MODULE   │
+│       Interactive ADCS Sim        │       │    Flight & Material Sim          │
+│       (ADCS_simulator.m)          │       │(flight_and_material_simulator.py) │
+├───────────────────────────────────┤       ├───────────────────────────────────┤
+│ • Platform: Base MATLAB           │       │ • Platform: Python 3 + Tkinter    │
+│ • Focus: Real-time 3D control     │       │ • Focus: Mission orbital flight   │
+│ • Live slider orientation steering│       │ • RK4 + J2 orbit propagation      │
+│ • Saturated PD reaction wheel law │       │ • Multi-hazard space degradation  │
+│ • Live tumble disturbance kick    │       │ • SRP & power degradation coupling│
+│ • Rolling telemetry buffers       │       │ • Full CSV + TXT data logging     │
+└───────────────────────────────────┘       └───────────────────────────────────┘
+```
+
+---
+
+## 2. Primary Showcase: Interactive ADCS Simulator (MATLAB)
+
+The **Interactive CubeSat ADCS Simulator** (`ADCS_simulator.m`) is the centerpiece of this engineering project. It delivers an intuitive, visually stunning, real-time closed-loop attitude determination and control environment with zero external toolbox dependencies.
+
+### 2.1 Core Features & Highlights
+- **Live Target Attitude Dragging:** Adjust Yaw, Pitch, and Roll sliders at any time while the simulation is actively computing dynamics; the target orientation updates immediately, and the CubeSat executes a real-time reorientation maneuver.
+- **Dual 3D Triad Rendering:** Displays the active CubeSat 3D body triad (solid red/green/blue lines) continuously chasing the commanded target reference triad (dashed lines).
+- **Physical Reaction Wheel Model:** Implements realistic torque saturation limits ($\tau_{\max} = 0.004\text{ N}\cdot\text{m}$) preventing unrealistic instant pointing.
+- **Perturbation & Disturbance Injection:**
+  - **"Disturb (Tumble)" Button:** Injects an abrupt random angular velocity disturbance kick ($\pm 35^\circ/\text{s}$), challenging the PD controller to detumble and re-acquire pointing.
+  - **"Randomize Target" Button:** Commands an instantaneous random target attitude.
+  - **"Reset" Button:** Re-centers state, zeroes angular rates, and resets scrolling buffers.
+- **Rolling Real-Time Telemetry:** Scrolling history plots for 3-axis angular rates ($\omega_x, \omega_y, \omega_z$), attitude error norm $\|q_{\text{err}}\|$, and lock-in indicator status.
+
+### 2.2 Mathematical Foundations
+
+#### Quaternion Kinematics
+Spacecraft attitude is represented using unit quaternions $q = [q_0, \mathbf{q}_v]^T = [w, x, y, z]^T$, completely eliminating gimbal lock singularities:
+$$\dot{q} = \frac{1}{2} q \otimes \begin{bmatrix} 0 \\ \boldsymbol{\omega} \end{bmatrix} = \frac{1}{2} \begin{bmatrix} -x\omega_x - y\omega_y - z\omega_z \\ w\omega_x + y\omega_z - z\omega_y \\ w\omega_y - x\omega_z + z\omega_x \\ w\omega_z + x\omega_y - y\omega_x \end{bmatrix}$$
+
+#### Euler Rigid-Body Dynamics
+Rotational motion obeys Euler's equations with reaction wheel control torque $\boldsymbol{\tau}_{\text{cmd}}$:
+$$\mathbf{I} \dot{\boldsymbol{\omega}} + \boldsymbol{\omega} \times (\mathbf{I} \boldsymbol{\omega}) = \boldsymbol{\tau}_{\text{cmd}} \implies \dot{\boldsymbol{\omega}} = \mathbf{I}^{-1} \left( \boldsymbol{\tau}_{\text{cmd}} - \boldsymbol{\omega} \times (\mathbf{I} \boldsymbol{\omega}) \right)$$
+where $\mathbf{I} = \text{diag}(I_{xx}, I_{yy}, I_{zz})$ is the 3U CubeSat inertia tensor calculated from mass ($4.0\text{ kg}$) and dimensions ($0.1\text{m} \times 0.1\text{m} \times 0.3\text{m}$).
+
+#### Saturated PD Quaternion Tracking Control Law
+Given target quaternion $q_{\text{target}}$ and current quaternion $q$, the error quaternion is computed via quaternion conjugation:
+$$q_{\text{err}} = q_{\text{target}}^* \otimes q$$
+If the scalar component $q_{\text{err}, 0} < 0$, the quaternion is negated to enforce the shortest rotation path. The control torque command is then:
+$$\boldsymbol{\tau}_{\text{cmd}} = \text{clip}\left( -K_p \mathbf{q}_{\text{err}, v} - K_d \boldsymbol{\omega}, \; -\tau_{\max}, \; +\tau_{\max} \right)$$
+*(Default tuning: $K_p = 0.015$, $K_d = 0.050$, $\tau_{\max} = 0.004\text{ N}\cdot\text{m}$, $\Delta t = 0.03\text{ s}$)*.
+
+### 2.3 User Interface & Interaction Guide
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          INTERACTIVE MATLAB ADCS UI                         │
+├──────────────────────────────────────┬──────────────────────────────────────┤
+│               3D VIEW                │          BODY ANGULAR VELOCITY       │
+│                                      │  ┌────────────────────────────────┐  │
+│        Z ▲ (Blue)                    │  │ ~~~~\omega_x  ~~~~\omega_y     │  │
+│          │                           │  └────────────────────────────────┘  │
+│          │  Solid = Body             │             ATTITUDE ERROR           │
+│          ├─────► Y (Green)           │  ┌────────────────────────────────┐  │
+│         /   Dashed = Target          │  │ \--------                      │  │
+│        ▼ X (Red)                     │  └────────────────────────────────┘  │
+├──────────────────────────────────────┴──────────────────────────────────────┤
+│  [Yaw Slider -180..+180]   [Pitch Slider -90..+90]   [Roll Slider -180..+180]│
+│  [ Randomize Target ]       [ Disturb (Tumble) ]      [ Reset ]              │
+│  Status: TARGET LOCKED ✓                                                    │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 2.4 Running the MATLAB Simulation
+
+1. Open MATLAB (R2018b or later; standard base installation, no toolboxes needed).
+2. Navigate to the project root directory.
+3. Run the script from the MATLAB Command Window:
+   ```matlab
+   ADCS_simulator
+   ```
+4. A $1250 \times 700$ figure window will appear with the active 3D visualization and sliders. Drag sliders at will to observe real-time attitude tracking.
+
+---
+
+## 3. Secondary Module: Integrated Flight & Material Degradation Simulator (Python)
+
+The **Integrated Flight & Material Simulator** (`flight_and_material_simulator.py`) is a multi-threaded Python application combining full orbital mechanics, attitude control, and space material degradation.
+
+### 3.1 Purpose & Role in the Toolkit
+While the MATLAB application focuses on real-time attitude interaction, the Python simulation answers mission-level questions:
+- *How do orbital disturbance torques (gravity gradient, magnetic dipole, aerodynamic drag, solar radiation pressure) challenge attitude control over multi-orbit passes?*
+- *How does the space environment (UV radiation, atomic oxygen, thermal cycles, ionizing radiation) degrade satellite materials over time?*
+- *How does material degradation feedback into attitude control disturbances and solar power loss?*
+
+### 3.2 Physics Coupling: Material Degradation & Flight Dynamics
+
+The simulation actively couples physical material degradation to satellite dynamics:
+1. **Solar Radiation Pressure (SRP) Drift:** As outer surface materials darken and erode from UV and atomic oxygen (AO), their solar absorptivity $\alpha(t)$ increases and optical reflectivity $\rho(t) = 1 - \alpha(t)$ drops. This alters the SRP force magnitude:
+   $$\mathbf{F}_{\text{SRP}}(t) = P_{\text{sun}} A (1 + \rho(t)) \hat{\mathbf{s}}_{\text{body}}$$
+   The resulting disturbance torque $\boldsymbol{\tau}_{\text{SRP}} = \mathbf{r}_{\text{cp}} \times \mathbf{F}_{\text{SRP}}$ shifts dynamically over the mission lifetime.
+2. **Solar Power Generation & Bus Voltage Decay:** As solar cell cover glass (Fused Silica / polymers) darkens from ionizing radiation and UV exposure, solar array efficiency $\eta_{\text{solar}}(t)$ drops:
+   $$P_{\text{gen}}(t) = P_{\text{base}} \cdot \text{Integrity}_{\text{cover}}(t), \quad V_{\text{bus}}(t) = 28.0 \cdot \left(0.60 + 0.40 \frac{P_{\text{gen}}(t)}{P_{\text{base}}}\right)$$
+   When bus voltage falls below $22.0\text{ V}$, the flight software automatically transitions into `LOW VOLTAGE` safe mode.
+3. **Thermal Radiative Equilibrium:** Computes instantaneous equilibrium temperatures between solar absorption and Stefan-Boltzmann radiative cooling:
+   $$T_{\text{eq}} = \left( \frac{\alpha(t) \cdot \Phi_{\text{solar}}}{\epsilon(t) \cdot \sigma} \right)^{1/4}$$
+
+### 3.3 Live Dashboard & Telemetry Visualizer
+
+The multi-threaded Tkinter dashboard features:
+- **12 Live Telemetry Tiles:** Roll, Pitch, Yaw, Attitude Error, Altitude, Orbital Velocity, Reaction Wheel Saturation %, Fuel Remaining, Surface Material Temperature, Material Integrity %, Bus Voltage, Expended $\Delta V$.
+- **6 Synchronized Real-Time Charts:** Euler angles, body rates, attitude error & wheel saturation, material degradation breakdown (UV, Rad, AO), thermal temperature curve, and bus power/voltage telemetry.
+- **Automatic Mission Persistence:** Generates `flight_material_report.txt` and full per-timestep `telemetry_data.csv`.
+
+### 3.4 Running the Python Simulation
+
+Ensure dependencies are installed:
+```bash
+pip install numpy matplotlib
+```
+Run the simulator:
+```bash
+python flight_and_material_simulator.py
+```
+
+---
+
+## 4. Toolkit Cross-Comparison Matrix
+
+| Metric / Aspect | Primary Showcase: ADCS Simulator | Secondary Module: Flight & Material Simulator |
+|---|---|---|
+| **Environment / Language** | MATLAB (Base only, no toolboxes) | Python 3 (NumPy, Matplotlib, Tkinter) |
+| **Primary Focus** | Live 3D closed-loop attitude tracking | Mission flight dynamics & material aging |
+| **Attitude Math** | Quaternions ($w, x, y, z$), Hamilton product | Quaternions ($w, x, y, z$), Hamilton product |
+| **Control Law** | Saturated PD on quaternion error | Saturated PD on quaternion error + RW Momentum |
+| **Interaction Model** | Live slider drag & perturb mid-flight | Pre-launch mission config dialog + live dashboard |
+| **Orbital Mechanics** | None (pure rigid-body attitude dynamics) | RK4 + $J_2$ Earth oblateness perturbation |
+| **Disturbances Modeled** | User-injected tumble kick ($\pm 35^\circ/\text{s}$) | Gravity gradient, aero drag, magnetic, coupled SRP |
+| **Material Degradation** | N/A | UV photolysis, AO erosion, ionizing radiation, thermal |
+| **Degradation Coupling** | N/A | Shifts SRP disturbance torque & solar power voltage |
+| **Threading Model** | Single-threaded `while ishandle(fig)` loop | Background physics thread + lock-protected GUI |
+| **Persisted Output** | In-memory rolling telemetry buffers | CSV full time-series + TXT engineering report |
+
+---
+
+## 5. Candidate Space Materials Reference
+
+The toolkit models 5 spaceflight-grade materials:
+
+| Material | Density ($\text{kg/m}^3$) | Thermal Cond. ($\text{W/m}\cdot\text{K}$) | Solar Absorptivity $\alpha_0$ | IR Emissivity $\epsilon_0$ | Primary Space Application |
+|---|---|---|---|---|---|
+| **Aluminum 6061-T6** | 2,700 | 167.0 | 0.09 | 0.05 | Primary CubeSat chassis, structural ribs |
+| **Carbon Fiber / Epoxy** | 1,600 | 5.0 | 0.92 | 0.85 | Solar array substrates, high-stiffness panels |
+| **Titanium Ti-6Al-4V** | 4,430 | 6.7 | 0.40 | 0.10 | High-stress fasteners, thruster brackets |
+| **Kapton Polyimide Film** | 1,420 | 0.12 | 0.30 | 0.86 | Multi-Layer Insulation (MLI) thermal blankets |
+| **Fused Silica (Quartz)** | 2,203 | 1.38 | 0.07 | 0.93 | Solar cell cover glass, optical sensor lenses |
+
+*For complete characteristics, degradation curves, and engineering trade-offs, refer to [FLIGHT_MATERIAL_SIMULATOR_REPORT.md](FLIGHT_MATERIAL_SIMULATOR_REPORT.md).*
+
+---
+
+## 6. Documentation & Engineering Reports
+
+Comprehensive standalone engineering reports are provided for detailed academic and technical evaluation:
+- [ADCS_SIMULATOR_REPORT.md](ADCS_SIMULATOR_REPORT.md) — Comprehensive technical report on the MATLAB interactive ADCS simulator, mathematical derivations, controller design, and validation.
+- [FLIGHT_MATERIAL_SIMULATOR_REPORT.md](FLIGHT_MATERIAL_SIMULATOR_REPORT.md) — Comprehensive technical report on the integrated Python flight and material degradation simulator, orbital mechanics, physics coupling, and the exhaustive Space Material Catalog.
+
+---
+
+## 7. Physical & Control Constants Reference
+
+| Symbol | Parameter | Nominal Value | Units |
+|---|---|---|---|
+| $\mu_{\text{Earth}}$ | Earth Gravitational Parameter | $3.986004418 \times 10^{14}$ | $\text{m}^3/\text{s}^2$ |
+| $R_{\text{Earth}}$ | Earth Mean Radius | $6.371 \times 10^6$ | $\text{m}$ |
+| $J_2$ | Earth Oblateness Perturbation | $1.08263 \times 10^{-3}$ | — |
+| $\Omega_{\text{Earth}}$ | Earth Angular Rotation Rate | $7.292115 \times 10^{-5}$ | $\text{rad/s}$ |
+| $B_0$ | Reference Earth Magnetic Field | $3.12 \times 10^{-4}$ | $\text{T}$ |
+| $P_{\text{sun}}$ | Solar Radiation Pressure (1 AU) | $4.56 \times 10^{-6}$ | $\text{N/m}^2$ |
+| $\sigma$ | Stefan-Boltzmann Constant | $5.670374 \times 10^{-8}$ | $\text{W}/(\text{m}^2\cdot\text{K}^4)$ |
+| $\Phi_{\text{solar}}$ | Solar Constant (1 AU) | $1361.0$ | $\text{W/m}^2$ |
+| $g_0$ | Standard Gravity | $9.80665$ | $\text{m/s}^2$ |

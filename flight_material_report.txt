@@ -1,0 +1,36 @@
+======================================================================
+  CUBESAT FLIGHT & MATERIAL DEGRADATION SIMULATION REPORT
+  Generated : 2026-08-19  19:37:35
+======================================================================
+  Spacecraft Preset    : CubeSat-6U
+  Total Mass           : 8.0 kg
+  Inertia (kg·m^2)     : Ixx=0.06, Iyy=0.06, Izz=0.09
+  Surface Material     : Fused Silica (Quartz)
+  Solar Cover Material : Fused Silica (Quartz)
+----------------------------------------------------------------------
+  Environment Profile  : Low Earth Orbit (LEO)
+  Orbit Altitude       : 390.07 km
+  Simulated Duration   : 30.00 minutes (0.50 hours)
+----------------------------------------------------------------------
+  END-OF-SIMULATION TELEMETRY & ATTITUDE PERFORMANCE
+----------------------------------------------------------------------
+  Final Euler Angles   : Roll=+1.02°, Pitch=-0.02°, Yaw=+9.99°
+  Attitude Error       : 0.028°
+  Reaction Wheel Sat.  : 65.6%
+  Delta-V Expended     : 0.000 m/s
+  Propellant Left      : 0.5000 kg
+  Final Flight Mode    : NOMINAL
+  Active Faults        : None
+----------------------------------------------------------------------
+  SPACE MATERIAL DEGRADATION & POWER SUMMARY
+----------------------------------------------------------------------
+  Material Temperature: 206.2 K (-67.0 °C)
+  Structural Integrity: 99.98%
+  Total Degradation    : 0.02%
+  UV Solar Damage      : 0.0000
+  Radiation Damage     : 0.0000
+  AO Surface Erosion   : 0.180 µm
+  Outgassing Loss      : 7.6560e-11 kg/m^2
+  Final Solar Power    : 34.99 W (Base: 35.0 W)
+  Final Bus Voltage    : 28.00 V
+======================================================================
